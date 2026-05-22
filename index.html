@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Haptic Controller Pro</title>
+    <style>
+        :root {
+            --bg-color: #0d0b11;
+            --card-bg: #16131c;
+            --primary: #ff2a85;
+            --secondary: #9d4edd;
+            --text: #f3f0f7;
+            --active-green: #00f5d4;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text); padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        .container { width: 100%; max-width: 450px; background: var(--card-bg); padding: 25px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #241f2f; }
+        h1 { font-size: 1.5rem; text-align: center; margin-bottom: 20px; color: var(--text); text-transform: uppercase; letter-spacing: 2px; }
+        
+        .mode-selector { display: flex; background: #221c2a; padding: 4px; border-radius: 12px; margin-bottom: 20px; }
+        .mode-btn { flex: 1; padding: 10px; border: none; background: transparent; color: #a299b0; border-radius: 10px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .mode-btn.active { background: var(--primary); color: white; box-shadow: 0 4px 12px rgba(255,42,133,0.3); }
+
+        .control-group { margin-bottom: 18px; }
+        label { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 8px; color: #bca0dc; font-weight: 500; }
+        select { width: 100%; padding: 12px; background: #221c2a; border: 1px solid #3d334c; color: white; border-radius: 12px; font-size: 1rem; outline: none; }
+        
+        input[type="range"] { -webkit-appearance: none; width: 100%; height: 8px; background: #2a2235; border-radius: 4px; outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; background: var(--secondary); border-radius: 50%; cursor: pointer; border: 2px solid white; transition: 0.1s; }
+        input[type="range"]::-webkit-slider-thumb:active { transform: scale(1.2); background: var(--primary); }
+
+        .visualizer-container { height: 160px; display: flex; justify-content: center; align-items: center; margin: 20px 0; background: #09070c; border-radius: 16px; overflow: hidden; position: relative; border: 1px solid #1f1926; }
+        .ring { position: absolute; border-radius: 50%; border: 3px solid transparent; transform: scale(0.1); opacity: 0; }
+        @keyframes throb {
+            0% { transform: scale(0.1); opacity: 0.8; }
+            100% { transform: scale(1.3); opacity: 0; }
+        }
+
+        .master-btn { width: 100%; padding: 18px; border: none; border-radius: 16px; font-size: 1.2rem; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: white; background: #221c2a; cursor: pointer; transition: 0.3s; margin-top: 10px; border: 2px solid #3d334c; }
+        .master-btn.active { background: var(--active-green); color: #0d0b11; box-shadow: 0 0 25px rgba(0,245,212,0.4); border-color: transparent; }
+
+        .status-log { text-align: center; font-size: 0.8rem; margin-top: 15px; color: #6f6480; font-family: monospace; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Vibrator App Pro</h1>
+
+    <div class="mode-selector">
+        <button id="hw-screen" class="mode-btn active" onclick="setHardware('screen')">Phone Motor</button>
+        <button id="hw-gamepad" class="mode-btn" onclick="setHardware('gamepad')">Gamepad (BT)</button>
+    </div>
+
+    <div class="control-group">
+        <label>Vibration Program</label>
+        <select id="program-select" onchange="updateProgram()">
+            <option value="program-plus">★ Program+</option>
+            <option value="wavy">Ebb & Flow Waves</option>
+            <option value="custom">Manual Custom Mix</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label>Heavy Rumble Depth <span id="heavy-val">80%</span></label>
+        <input type="range" id="heavy-slider" min="0" max="100" value="80" oninput="uiUpdate()">
+    </div>
+
+    <div class="control-group">
+        <label>Light Surface Tingle <span id="light-val">100%</span></label>
+        <input type="range" id="light-slider" min="0" max="100" value="100" oninput="uiUpdate()">
+    </div>
+
+    <div class="visualizer-container" id="visualizer">
+        <div id="status-display" style="position:absolute; font-weight:bold; color:#4e3f63; z-index:2; text-transform:uppercase; font-size:0.8rem;">Engine Idle</div>
+    </div>
+
+    <button id="master-btn" class="master-btn" onclick="toggleEngine()">Activate Program+</button>
+    <div class="status-log" id="status-log">Ready. Select hardware & hit activate.</div>
+</div>
+
+<script>
+    let hardwareMode = 'screen';
+    let currentProgram = 'program-plus';
+    let isActive = false;
+    let loopInterval = null;
+    let waveTick = 0;
+
+    function setHardware(mode) {
+        hardwareMode = mode;
+        document.getElementById('hw-screen').classList.toggle('active', mode === 'screen');
+        document.getElementById('hw-gamepad').classList.toggle('active', mode === 'gamepad');
+        log(`Swapped hardware target to: ${mode.toUpperCase()}`);
+    }
+
+    function updateProgram() {
+        currentProgram = document.getElementById('program-select').value;
+        const btn = document.getElementById('master-btn');
+        if(!isActive) {
+            btn.innerText = currentProgram === 'program-plus' ? 'Activate Program+' : 'Start Program';
+        }
+    }
+
+    function uiUpdate() {
+        document.getElementById('heavy-val').innerText = document.getElementById('heavy-slider').value + "%";
+        document.getElementById('light-val').innerText = document.getElementById('light-slider').value + "%";
+    }
+
+    function log(txt) {
+        document.getElementById('status-log').innerText = txt;
+    }
+
+    function toggleEngine() {
+        isActive = !isActive;
+        const btn = document.getElementById('master-btn');
+        const statusText = document.getElementById('status-display');
+        
+        if (isActive) {
+            btn.classList.add('active');
+            btn.innerText = "SHUTDOWN ENGINE";
+            statusText.innerText = "Transmission Active";
+            startLoop();
+        } else {
+            btn.classList.remove('active');
+            updateProgram();
+            statusText.innerText = "Engine Idle";
+            stopLoop();
+        }
+    }
+
+    function startLoop() {
+        if(loopInterval) clearInterval(loopInterval);
+        loopInterval = setInterval(() => {
+            if(!isActive) return;
+
+            const heavyMax = document.getElementById('heavy-slider').value / 100;
+            const lightMax = document.getElementById('light-slider').value / 100;
+            waveTick += 0.2;
+
+            let hTarget = heavyMax;
+            let lTarget = lightMax;
+
+            if (currentProgram === 'wavy') {
+                let waveFactor = (Math.sin(waveTick) + 1) / 2;
+                hTarget = heavyMax * waveFactor;
+                lTarget = lightMax * (1 - waveFactor);
+            } else if (currentProgram === 'program-plus') {
+                let spike = (Math.sin(waveTick * 2.5) > 0.2) ? 1.0 : 0.1;
+                hTarget = heavyMax * spike;
+                lTarget = lightMax * spike;
+            }
+
+            triggerHardware(hTarget, lTarget);
+            spawnVisualRipple(hTarget, lTarget);
+        }, 200);
+    }
+
+    function triggerHardware(heavy, light) {
+        if (hardwareMode === 'screen') {
+            if (navigator.vibrate) {
+                navigator.vibrate(180);
+            }
+        } else {
+            try {
+                const gamepads = navigator.getGamepads();
+                for (let i = 0; i < gamepads.length; i++) {
+                    const gp = gamepads[i];
+                    if (gp && gp.vibrationActuator) {
+                        gp.vibrationActuator.playEffect('dual-rumble', {
+                            startDelay: 0,
+                            duration: 240,
+                            strongMagnitude: heavy,
+                            weakMagnitude: light
+                        });
+                        break;
+                    }
+                }
+            } catch (err) {}
+        }
+    }
+
+    function spawnVisualRipple(h, l) {
+        const container = document.getElementById('visualizer');
+        const r = document.createElement('div');
+        r.className = 'ring';
+        let size = 40 + (h * 70);
+        r.style.width = size + 'px';
+        r.style.height = size + 'px';
+        r.style.borderColor = h > l ? 'var(--primary)' : 'var(--secondary)';
+        r.style.animation = 'throb 0.6s cubic-bezier(0.1, 0.8, 0.3, 1) forwards';
+        container.appendChild(r);
+        setTimeout(() => r.remove(), 600);
+    }
+
+    function stopLoop() {
+        clearInterval(loopInterval);
+        loopInterval = null;
+        if(navigator.vibrate) navigator.vibrate(0);
+    }
+
+    window.addEventListener("gamepadconnected", (e) => {
+        log(`Hardware linked: ${e.gamepad.id}. Ready.`);
+    });
+</script>
+</body>
+</html>
