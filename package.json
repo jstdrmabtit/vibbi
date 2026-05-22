@@ -4,7 +4,7 @@
   "description": "Haptic Engine App",
   "main": "index.html",
   "scripts": {
-    "build": "echo 'No web build step required'"
+    "build": "npx cap add android || echo 'Android already present'"
   },
   "dependencies": {
     "@capacitor/core": "^6.0.0",
